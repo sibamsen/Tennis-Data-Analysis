@@ -1,4 +1,4 @@
-rank,movement,points,competitions_played,competitor_id
+rank_position,movement,points,competitions_played,competitor_id
 1,1,8610,14,sr:competitor:16160
 2,1,8520,15,sr:competitor:15568
 3,-2,8430,25,sr:competitor:53785
