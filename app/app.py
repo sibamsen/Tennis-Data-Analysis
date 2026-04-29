@@ -1,268 +1,211 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 
-# --- PAGE CONFIG ---
+# ---------------- PAGE CONFIG ---------------- #
 st.set_page_config(
-    page_title="ProTennis | Analytics Dashboard",
-    page_icon="🎾",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="ProTennis Dashboard",
+    layout="wide"
 )
 
-# --- CUSTOM CSS ---
+# ---------------- UI STYLE ---------------- #
 st.markdown("""
-    <style>
-    /* Main background */
-    .main {
-        background-color: #0e1117;
-    }
-    /* Metric Card Styling */
-    div[data-testid="metric-container"] {
-        background-color: #1e2130;
-        border: 1px solid #4a4e69;
-        padding: 15px 20px;
-        border-radius: 12px;
-        color: white;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-    }
-    div[data-testid="metric-container"] label {
-        color: #9fa6b2 !important;
-        font-weight: 600 !important;
-        text-transform: uppercase;
-        font-size: 0.8rem !important;
-    }
-    div[data-testid="metric-container"] > div {
-        color: #00d4ff !important;
-    }
-    /* Tab Styling */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #1e2130;
-        border-radius: 8px 8px 0 0;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #00d4ff !important;
-        color: #0e1117 !important;
-    }
-    /* Sidebar Styling */
-    .sidebar .sidebar-content {
-        background-image: linear-gradient(#2e3341, #0e1117);
-    }
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+.main {
+    background-color: #0e1117;
+}
 
-# --- LOAD DATA ---
+/* Gradient Title */
+.title {
+    font-size: 40px;
+    font-weight: bold;
+    background: -webkit-linear-gradient(#00d4ff, #7efff5);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Metric Cards */
+.card {
+    background: linear-gradient(135deg, #1e2130, #2e3341);
+    padding: 20px;
+    border-radius: 15px;
+    border-left: 5px solid #00d4ff;
+    text-align: center;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------- DATA LOADER ---------------- #
 @st.cache_data
 def load_data():
-    try:
-        competitors = pd.read_csv("data/processed_data/competitors.csv")
-        rankings = pd.read_csv("data/processed_data/rankings.csv")
-        df = pd.merge(rankings, competitors, on="competitor_id")
-        return df
-    except Exception as e:
-        st.error(f"Error loading data: {e}")
-        return pd.DataFrame()
+    competitors = pd.read_csv("data/processed_data/competitors.csv")
+    rankings = pd.read_csv("data/processed_data/rankings.csv")
 
-df = load_data()
+    df = pd.merge(rankings, competitors, on="competitor_id")
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.image("https://img.icons8.com/fluency/96/tennis-ball.png", width=80)
-    st.title("Filters")
+    df["rank_position"] = pd.to_numeric(df["rank_position"], errors="coerce")
+    df["points"] = pd.to_numeric(df["points"], errors="coerce")
+
+    df = df.dropna(subset=["rank_position", "points"])
+
+    df = df.sort_values("rank_position").drop_duplicates(
+        subset=["competitor_id"], keep="first"
+    )
+
+    return df
+
+
+# ---------------- MAIN ---------------- #
+def show():
+
+    st.markdown('<div class="title">🎾 ProTennis Executive Dashboard</div>', unsafe_allow_html=True)
+
+    df = load_data()
+
+    if df.empty:
+        st.warning("No data available")
+        return
+
+    # ---------------- KPI ---------------- #
+    total_players = len(df)
+    total_countries = df["country"].nunique()
+    avg_points = int(df["points"].mean())
+    max_points = int(df["points"].max())
+
+    def metric_card(title, value, color):
+        return f"""
+        <div class="card" style="border-left:5px solid {color}">
+            <h4>{title}</h4>
+            <h2 style="color:{color}">{value}</h2>
+        </div>
+        """
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.markdown(metric_card("👥 Players", total_players, "#00d4ff"), unsafe_allow_html=True)
+    c2.markdown(metric_card("🌍 Countries", total_countries, "#00ffcc"), unsafe_allow_html=True)
+    c3.markdown(metric_card("📊 Avg Points", avg_points, "#ffcc00"), unsafe_allow_html=True)
+    c4.markdown(metric_card("🏆 Max Points", max_points, "#ff4b4b"), unsafe_allow_html=True)
+
     st.markdown("---")
-    
-    country_list = sorted(df['country'].dropna().unique().tolist()) if not df.empty else []
-    selected_country = st.selectbox("🌍 Select Country", ["Global"] + country_list)
-    
-    st.subheader("Performance Thresholds")
-    rank_limit = st.slider("🏆 Rank Range", 1, int(df['rank'].max()) if not df.empty and pd.notna(df['rank'].max()) else 100, (1, 100))
-    points_limit = st.slider("🔥 Points Minimum", 
-                             int(df['points'].min()) if not df.empty and pd.notna(df['points'].min()) else 0, 
-                             int(df['points'].max()) if not df.empty and pd.notna(df['points'].max()) else 1000, 
-                             int(df['points'].min()) if not df.empty and pd.notna(df['points'].min()) else 0)
-    
-    st.markdown("---")
-    st.info("💡 **Pro Tip:** Use filters to narrow down player performance by region and score.")
 
-# --- DATA FILTERING ---
-filtered_df = df.copy()
-if not filtered_df.empty:
-    if selected_country != "Global":
-        filtered_df = filtered_df[filtered_df['country'] == selected_country]
+    # ---------------- TOP PLAYERS ---------------- #
+    st.subheader("Top 10 Players by Points")
 
-    filtered_df = filtered_df[
-        (filtered_df['rank'] >= rank_limit[0]) & 
-        (filtered_df['rank'] <= rank_limit[1]) &
-        (filtered_df['points'] >= points_limit)
-    ]
+    top_players = df.sort_values("points", ascending=False).head(10)
 
-# --- HEADER ---
-header_col1, header_col2 = st.columns([3, 1])
-with header_col1:
-    st.title("🎾 ProTennis Analytics")
-    st.markdown("#### Real-time insights from SportRadar Tennis v3 API")
-with header_col2:
-    st.write("") # Spacer
-    st.write("") # Spacer
-    if not filtered_df.empty:
-        st.success(f"Viewing {len(filtered_df)} players")
+    fig1 = px.bar(
+        top_players,
+        x="name",
+        y="points",
+        color="points",
+        color_continuous_scale="Plasma",
+        template="plotly_dark"
+    )
+    fig1.update_layout(xaxis_tickangle=-45)
+    st.plotly_chart(fig1, use_container_width=True)
 
-st.markdown("---")
+    # ---------------- COUNTRY POINTS ---------------- #
+    st.subheader("Top 10 Countries by Total Points")
 
-# --- MAIN DASHBOARD ---
-tab_analytics, tab_leaderboard, tab_player_search = st.tabs([
-    "📊 Global Analytics", 
-    "🏆 Top Performers", 
-    "🔍 Player Deep Dive"
-])
+    country_points = (
+        df.groupby("country", as_index=False)["points"]
+        .sum()
+        .sort_values("points", ascending=False)
+        .head(10)
+    )
 
-# Tab 1: Global Analytics
-with tab_analytics:
-    if not filtered_df.empty:
-        # Row 1: KPI Metrics
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Athletes", len(filtered_df))
-        m2.metric("Avg. Points", f"{filtered_df['points'].mean():.0f}")
-        m3.metric("Countries", filtered_df['country'].nunique())
-        
-        top_country = filtered_df['country'].value_counts().idxmax() if not filtered_df.empty else "N/A"
-        m4.metric("Top Region", top_country)
+    fig2 = px.bar(
+        country_points,
+        x="country",
+        y="points",
+        color="points",
+        color_continuous_scale="Plasma",
+        template="plotly_dark"
+    )
+    fig2.update_layout(xaxis_tickangle=-45)
+    st.plotly_chart(fig2, use_container_width=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
+    # ---------------- PLAYER DISTRIBUTION ---------------- #
+    st.subheader("Player Distribution by Country")
 
-        # Row 2: Charts
-        col_chart1, col_chart2 = st.columns([2, 1])
-        
-        with col_chart1:
-            st.subheader("Points vs Ranking Distribution")
-            fig_scatter = px.scatter(
-                filtered_df, 
-                x="rank", 
-                y="points", 
-                color="points",
-                size="competitions_played",
-                hover_name="name",
-                color_continuous_scale="Viridis",
-                template="plotly_dark"
-            )
-            fig_scatter.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig_scatter, use_container_width=True)
+    player_dist = (
+        df["country"]
+        .value_counts()
+        .head(10)
+        .reset_index()
+    )
+    player_dist.columns = ["country", "players"]
 
-        with col_chart2:
-            st.subheader("Regional Strength")
-            country_counts = filtered_df['country'].value_counts().head(10).reset_index()
-            country_counts.columns = ['Country', 'Player Count']
-            fig_pie = px.pie(
-                country_counts, 
-                values='Player Count', 
-                names='Country', 
-                hole=0.4,
-                template="plotly_dark",
-                color_discrete_sequence=px.colors.qualitative.Pastel
-            )
-            fig_pie.update_layout(showlegend=False)
-            st.plotly_chart(fig_pie, use_container_width=True)
+    fig3 = px.pie(
+        player_dist,
+        values="players",
+        names="country",
+        hole=0.4,
+        template="plotly_dark"
+    )
+    st.plotly_chart(fig3, use_container_width=True)
 
-        st.subheader("Points Density by Country")
-        fig_bar = px.bar(
-            filtered_df.groupby('country')['points'].sum().sort_values(ascending=False).head(15).reset_index(),
-            x='country', y='points',
-            color='points',
-            color_continuous_scale="Icefire",
-            template="plotly_dark"
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
+    # ---------------- SCATTER ---------------- #
+    st.subheader("Ranking vs Points")
 
-# Tab 2: Leaderboard
-with tab_leaderboard:
-    st.subheader("🏅 Official Rankings Leaderboard")
-    if not filtered_df.empty:
-        # Clean up the table for display
-        display_df = filtered_df.sort_values("rank")[['rank', 'name', 'country', 'points', 'movement', 'competitions_played']]
-        display_df.rename(columns={
-            'rank': 'Rank',
-            'name': 'Name',
-            'country': 'Nationality',
-            'points': 'Total Points',
-            'movement': 'Move',
-            'competitions_played': 'Tournaments'
-        }, inplace=True)
-        
-        def color_movement(val):
-            color = '#00ff00' if val > 0 else '#ff0000' if val < 0 else '#9fa6b2'
-            return f'color: {color}'
+    fig4 = px.scatter(
+        df,
+        x="rank_position",
+        y="points",
+        color="points",
+        size="competitions_played",
+        hover_name="name",
+        template="plotly_dark"
+    )
+    st.plotly_chart(fig4, use_container_width=True)
 
-        st.dataframe(
-            display_df.style.map(color_movement, subset=['Move']),
-            use_container_width=True,
-            hide_index=True
-        )
+    # ---------------- INSIGHTS ---------------- #
+    st.markdown("## Strategic Insights")
 
-# Tab 3: Player Search
-with tab_player_search:
-    st.subheader("🔎 Individual Player Performance")
-    player_name = st.selectbox("Search for an Athlete", [""] + sorted(df['name'].dropna().unique().tolist()) if not df.empty else [""])
-    
-    if player_name:
-        p_data = df[df['name'] == player_name].iloc[0]
-        
-        card_col1, card_col2 = st.columns([1, 2])
-        
-        with card_col1:
-            st.markdown(f"""
-                <div style="background-color: #1e2130; padding: 25px; border-radius: 15px; border-left: 5px solid #00d4ff;">
-                    <h2 style="margin-bottom: 0;">{p_data['name']}</h2>
-                    <p style="color: #00d4ff; font-size: 1.2rem;">{p_data['country']} ({p_data['country_code']})</p>
-                    <hr style="border: 0.5px solid #4a4e69;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <span><b>Current Rank:</b></span>
-                        <span style="color: #00d4ff;">#{p_data['rank']}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span><b>Points:</b></span>
-                        <span>{p_data['points']}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span><b>Movement:</b></span>
-                        <span>{'⬆️' if p_data['movement'] > 0 else '⬇️' if p_data['movement'] < 0 else '➖'} {abs(p_data['movement'])}</span>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with card_col2:
-            # Radial chart or gauge for performance
-            fig_gauge = go.Figure(go.Indicator(
-                mode = "gauge+number",
-                value = p_data['points'],
-                domain = {'x': [0, 1], 'y': [0, 1]},
-                title = {'text': "Points Capacity", 'font': {'size': 24}},
-                gauge = {
-                    'axis': {'range': [None, df['points'].max()], 'tickwidth': 1},
-                    'bar': {'color': "#00d4ff"},
-                    'bgcolor': "white",
-                    'borderwidth': 2,
-                    'bordercolor': "gray",
-                    'steps': [
-                        {'range': [0, 2000], 'color': '#1e2130'},
-                        {'range': [2000, 5000], 'color': '#2e3341'}],
-                    'threshold': {
-                        'line': {'color': "red", 'width': 4},
-                        'thickness': 0.75,
-                        'value': p_data['points']}}))
-            
-            fig_gauge.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
-            st.plotly_chart(fig_gauge, use_container_width=True)
+    top_countries = (
+        df.groupby("country")["points"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(3)
+    )
+
+    top_players3 = df.sort_values("points", ascending=False).head(3)
+
+    top_player_base = df["country"].value_counts().head(3)
+
+    st.markdown(f"""
+    <div style="
+    background: linear-gradient(135deg,#1e2130,#2e3341);
+    padding:25px;
+    border-radius:15px;
+    border-left:5px solid #00d4ff;
+    font-size:16px;
+    line-height:1.7;
+    ">
+
+    🔥 <b>Top 3 Countries by Total Points</b><br>
+    🥇 {top_countries.index[0]} → <span style="color:#00ffcc">{top_countries.iloc[0]:,}</span><br>
+    🥈 {top_countries.index[1]} → {top_countries.iloc[1]:,}<br>
+    🥉 {top_countries.index[2]} → {top_countries.iloc[2]:,}
+
+    <br>
+
+    🏆 <b>Top 3 Players</b><br>
+    🥇 {top_players3.iloc[0]['name']} ({top_players3.iloc[0]['country']}) → {top_players3.iloc[0]['points']:,}<br>
+    🥈 {top_players3.iloc[1]['name']} ({top_players3.iloc[1]['country']}) → {top_players3.iloc[1]['points']:,}<br>
+    🥉 {top_players3.iloc[2]['name']} ({top_players3.iloc[2]['country']}) → {top_players3.iloc[2]['points']:,}
+
+    <br>
+
+    🌍 <b>Top Player Base Countries</b><br>
+    🥇 {top_player_base.index[0]} → {top_player_base.iloc[0]} players<br>
+    🥈 {top_player_base.index[1]} → {top_player_base.iloc[1]} players<br>
+    🥉 {top_player_base.index[2]} → {top_player_base.iloc[2]} players
+
+    </div>
+    """, unsafe_allow_html=True)
 
 
-# --- FOOTER ---
-st.markdown("---")
-st.markdown("<div style='text-align: right;'>© 2024 Tennis Analytics Pro</div>", unsafe_allow_html=True)
+# ---------------- RUN ---------------- #
+if __name__ == "__main__":
+    show()
