@@ -4,7 +4,7 @@ import plotly.express as px
 
 # ---------------- PAGE CONFIG ---------------- #
 st.set_page_config(
-    page_title="ProTennis Dashboard",
+    page_title="Game Analytics: Tennis Data with SportRadar API",
     layout="wide"
 )
 
